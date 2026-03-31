@@ -19,4 +19,5 @@ export interface CalculationResult {
   qtyGap: number;
   totalFundsNeeded: number;
   periodicInvestment: number;
+  qtyPerPeriod: number;
 }

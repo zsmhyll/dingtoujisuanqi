@@ -154,6 +154,7 @@ const Calculator: React.FC = () => {
       }
     }
     const periodicInvestment = periods > 0 ? totalFundsNeeded / periods : 0;
+    const qtyPerPeriod = periods > 0 ? qtyGap / periods : 0;
 
     return {
       beforeCost: currentPrice,
@@ -167,7 +168,8 @@ const Calculator: React.FC = () => {
       isUnreachable,
       qtyGap,
       totalFundsNeeded,
-      periodicInvestment
+      periodicInvestment,
+      qtyPerPeriod
     };
   }, [currentQty, currentPrice, marketPrice, plans, market, useFee, targetCost, targetTotalQty, periods]);
 
@@ -505,13 +507,22 @@ const Calculator: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="flex justify-between items-center bg-emerald-50 -mx-4 -mb-4 p-4 rounded-b-xl">
-                <span className="text-sm font-medium text-emerald-800">每期预估投入</span>
-                <div className="text-right">
-                  <span className="text-xl font-bold text-emerald-600">
+              <div className="flex justify-between items-center bg-emerald-50 -mx-4 -mb-4 p-4 rounded-b-xl gap-4">
+                <div className="flex-1">
+                  <span className="text-xs font-medium text-emerald-800 block">每期预估定投</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-lg font-bold text-emerald-700">
+                      {results.qtyPerPeriod.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-[10px] text-emerald-600">股</span>
+                  </div>
+                </div>
+                <div className="text-right flex-1">
+                  <span className="text-xs font-medium text-emerald-800 block">每期预估投入</span>
+                  <span className="text-lg font-bold text-emerald-600">
                     ¥{results.periodicInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <p className="text-[10px] text-emerald-500 font-normal">基于拟买入单价计算</p>
+                  <p className="text-[10px] text-emerald-500 font-normal">基于拟买入单价</p>
                 </div>
               </div>
             </div>
