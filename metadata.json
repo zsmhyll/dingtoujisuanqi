@@ -1,0 +1,5 @@
+{
+  "name": "高级定投成本计算器",
+  "description": "智能摊低成本，支持A股、港股、美股市场，包含交易费率计算与反向目标成本推算。",
+  "requestFramePermissions": []
+}
