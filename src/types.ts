@@ -20,4 +20,7 @@ export interface CalculationResult {
   totalFundsNeeded: number;
   periodicInvestment: number;
   qtyPerPeriod: number;
+  currency: string;
+  potentialProfit: number;
+  profitPercent: number;
 }

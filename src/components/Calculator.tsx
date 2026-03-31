@@ -16,7 +16,49 @@ const Calculator: React.FC = () => {
   const [targetCost, setTargetCost] = useState<number>(0);
   const [targetTotalQty, setTargetTotalQty] = useState<number>(0);
   const [periods, setPeriods] = useState<number>(12);
+  const [targetSellPrice, setTargetSellPrice] = useState<number>(0);
   const [keepPosition, setKeepPosition] = useState<boolean>(false);
+
+  // Load state from localStorage on mount
+  React.useEffect(() => {
+    const saved = localStorage.getItem('calculator_state');
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.market) setMarket(state.market);
+        if (state.currentQty !== undefined) setCurrentQty(state.currentQty);
+        if (state.currentPrice !== undefined) setCurrentPrice(state.currentPrice);
+        if (state.marketPrice !== undefined) setMarketPrice(state.marketPrice);
+        if (state.plans) setPlans(state.plans);
+        if (state.useFee !== undefined) setUseFee(state.useFee);
+        if (state.targetCost !== undefined) setTargetCost(state.targetCost);
+        if (state.targetTotalQty !== undefined) setTargetTotalQty(state.targetTotalQty);
+        if (state.periods !== undefined) setPeriods(state.periods);
+        if (state.targetSellPrice !== undefined) setTargetSellPrice(state.targetSellPrice);
+        if (state.keepPosition !== undefined) setKeepPosition(state.keepPosition);
+      } catch (e) {
+        console.error('Failed to load state', e);
+      }
+    }
+  }, []);
+
+  // Save state to localStorage on change
+  React.useEffect(() => {
+    const state = {
+      market,
+      currentQty,
+      currentPrice,
+      marketPrice,
+      plans,
+      useFee,
+      targetCost,
+      targetTotalQty,
+      periods,
+      targetSellPrice,
+      keepPosition
+    };
+    localStorage.setItem('calculator_state', JSON.stringify(state));
+  }, [market, currentQty, currentPrice, marketPrice, plans, useFee, targetCost, targetTotalQty, periods, targetSellPrice, keepPosition]);
 
   const handleReset = () => {
     if (!keepPosition) {
@@ -31,6 +73,7 @@ const Calculator: React.FC = () => {
     setTargetCost(0);
     setTargetTotalQty(0);
     setPeriods(12);
+    setTargetSellPrice(0);
     setMarket('us');
     setUseFee(true);
   };
@@ -56,6 +99,9 @@ const Calculator: React.FC = () => {
     let totalCost = currentQty * currentPrice;
     let totalQty = currentQty;
 
+    const feeRate = market === 'a' ? 0.00025 : market === 'hk' ? 0.00135 : 0; // HK: 0.1% stamp duty + others
+    const currency = market === 'us' ? '$' : market === 'hk' ? 'HK$' : '¥';
+
     plans.forEach(plan => {
       let qty = plan.qty;
       if (market === 'a' && qty > 0) {
@@ -70,7 +116,8 @@ const Calculator: React.FC = () => {
             const buyFee = Math.max(buyCost * 0.00025, 5);
             buyCost += buyFee;
           } else if (market === 'hk') {
-            const buyFee = buyCost * (0.0003 + 0.00027 + 0.00005);
+            // HK Stamp Duty 0.1% + Trading fee/levy ~0.0385%
+            const buyFee = buyCost * 0.001385;
             buyCost += buyFee;
           }
         }
@@ -108,7 +155,7 @@ const Calculator: React.FC = () => {
         if (useFee) {
           let feeRate = 0;
           if (market === 'a') feeRate = 0.00025;
-          else if (market === 'hk') feeRate = 0.0003 + 0.00027 + 0.00005;
+          else if (market === 'hk') feeRate = 0.001385;
           
           // Adjusted formula: (totalCost + neededQty * marketPrice * (1 + feeRate)) / (totalQty + neededQty) = targetCost
           // neededQty = (totalCost - targetCost * totalQty) / (targetCost - marketPrice * (1 + feeRate))
@@ -135,7 +182,7 @@ const Calculator: React.FC = () => {
           if (market === 'a') {
             neededMoney += Math.max(neededMoney * 0.00025, 5);
           } else if (market === 'hk') {
-            neededMoney += neededMoney * (0.0003 + 0.00027 + 0.00005);
+            neededMoney += neededMoney * 0.001385;
           }
         }
       } else {
@@ -144,17 +191,42 @@ const Calculator: React.FC = () => {
     }
 
     // Target Total Qty Planning
-    const qtyGap = Math.max(0, targetTotalQty - totalQty);
+    let qtyGap = Math.max(0, targetTotalQty - totalQty);
+    if (market === 'a' && qtyGap > 0) {
+      qtyGap = Math.ceil(qtyGap / 100) * 100;
+    }
+
     let totalFundsNeeded = qtyGap * marketPrice;
     if (useFee && qtyGap > 0 && marketPrice > 0) {
       if (market === 'a') {
         totalFundsNeeded += Math.max(totalFundsNeeded * 0.00025, 5);
       } else if (market === 'hk') {
-        totalFundsNeeded += totalFundsNeeded * (0.0003 + 0.00027 + 0.00005);
+        totalFundsNeeded += totalFundsNeeded * 0.001385;
       }
     }
     const periodicInvestment = periods > 0 ? totalFundsNeeded / periods : 0;
-    const qtyPerPeriod = periods > 0 ? qtyGap / periods : 0;
+    let qtyPerPeriod = periods > 0 ? qtyGap / periods : 0;
+    if (market === 'a' && qtyPerPeriod > 0) {
+      qtyPerPeriod = Math.ceil(qtyPerPeriod / 100) * 100;
+    }
+
+    // Profit Prediction
+    let potentialProfit = 0;
+    let profitPercent = 0;
+    if (targetSellPrice > 0 && totalQty > 0) {
+      let sellProceeds = targetSellPrice * totalQty;
+      if (useFee) {
+        if (market === 'a') {
+          // Sell fee: 0.1% stamp duty + 0.025% commission
+          sellProceeds -= sellProceeds * (0.001 + 0.00025);
+        } else if (market === 'hk') {
+          // Sell fee: 0.1% stamp duty + others
+          sellProceeds -= sellProceeds * 0.001385;
+        }
+      }
+      potentialProfit = sellProceeds - totalCost;
+      profitPercent = totalCost > 0 ? (potentialProfit / totalCost) * 100 : 0;
+    }
 
     return {
       beforeCost: currentPrice,
@@ -169,9 +241,12 @@ const Calculator: React.FC = () => {
       qtyGap,
       totalFundsNeeded,
       periodicInvestment,
-      qtyPerPeriod
+      qtyPerPeriod,
+      currency,
+      potentialProfit,
+      profitPercent
     };
-  }, [currentQty, currentPrice, marketPrice, plans, market, useFee, targetCost, targetTotalQty, periods]);
+  }, [currentQty, currentPrice, marketPrice, plans, market, useFee, targetCost, targetTotalQty, periods, targetSellPrice]);
 
   const marketInfo = {
     a: {
@@ -231,9 +306,10 @@ const Calculator: React.FC = () => {
               <label className="text-xs text-gray-500 font-medium">持仓数量 (股)</label>
               <input
                 type="number"
+                min="0"
                 value={currentQty || ''}
                 placeholder="0"
-                onChange={(e) => setCurrentQty(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setCurrentQty(Math.max(0, parseFloat(e.target.value) || 0))}
                 className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
               />
               <div className="flex items-center gap-1.5 mt-1.5">
@@ -248,12 +324,13 @@ const Calculator: React.FC = () => {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs text-gray-500 font-medium">成本价格 (CNY)</label>
+              <label className="text-xs text-gray-500 font-medium">成本价格 ({results.currency === '$' ? 'USD' : results.currency === 'HK$' ? 'HKD' : 'CNY'})</label>
               <input
                 type="number"
+                min="0"
                 value={currentPrice || ''}
                 placeholder="0.00"
-                onChange={(e) => setCurrentPrice(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setCurrentPrice(Math.max(0, parseFloat(e.target.value) || 0))}
                 className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
               />
             </div>
@@ -277,16 +354,18 @@ const Calculator: React.FC = () => {
                   <div className="flex-1 grid grid-cols-2 gap-2">
                     <input
                       type="number"
+                      min="0"
                       placeholder="价格"
                       value={plan.price || ''}
-                      onChange={(e) => updatePlan(plan.id, 'price', parseFloat(e.target.value) || 0)}
+                      onChange={(e) => updatePlan(plan.id, 'price', Math.max(0, parseFloat(e.target.value) || 0))}
                       className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                     <input
                       type="number"
+                      min="0"
                       placeholder="数量"
                       value={plan.qty || ''}
-                      onChange={(e) => updatePlan(plan.id, 'qty', parseFloat(e.target.value) || 0)}
+                      onChange={(e) => updatePlan(plan.id, 'qty', Math.max(0, parseFloat(e.target.value) || 0))}
                       className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
@@ -351,7 +430,7 @@ const Calculator: React.FC = () => {
             </div>
             <div className="text-center">
               <p className="text-sm text-gray-400 mb-1">累计投入</p>
-              <p className="text-xl font-bold text-gray-800">¥{results.totalInvest.toFixed(2)}</p>
+              <p className="text-xl font-bold text-gray-800">{results.currency}{results.totalInvest.toFixed(2)}</p>
             </div>
             <div className="text-center">
               <p className="text-sm text-gray-400 mb-1">最终持仓</p>
@@ -391,9 +470,10 @@ const Calculator: React.FC = () => {
                 <label className="text-xs text-gray-500 font-medium text-center block">目标成本</label>
                 <input
                   type="number"
+                  min="0"
                   value={targetCost || ''}
                   placeholder="0.00"
-                  onChange={(e) => setTargetCost(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setTargetCost(Math.max(0, parseFloat(e.target.value) || 0))}
                   className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
                 />
               </div>
@@ -401,9 +481,10 @@ const Calculator: React.FC = () => {
                 <label className="text-xs text-gray-500 font-medium text-center block">拟买入单价</label>
                 <input
                   type="number"
+                  min="0"
                   value={marketPrice || ''}
                   placeholder="0.00"
-                  onChange={(e) => setMarketPrice(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setMarketPrice(Math.max(0, parseFloat(e.target.value) || 0))}
                   className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
                 />
               </div>
@@ -427,7 +508,7 @@ const Calculator: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-500">预估所需资金</span>
                     <span className="text-lg font-bold text-emerald-600">
-                      ¥{results.neededMoney.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {results.currency}{results.neededMoney.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </>
@@ -451,9 +532,10 @@ const Calculator: React.FC = () => {
                 <label className="text-xs text-gray-500 font-medium text-center block">最终目标持仓</label>
                 <input
                   type="number"
+                  min="0"
                   value={targetTotalQty || ''}
                   placeholder="0"
-                  onChange={(e) => setTargetTotalQty(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setTargetTotalQty(Math.max(0, parseFloat(e.target.value) || 0))}
                   className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
                 />
               </div>
@@ -461,9 +543,10 @@ const Calculator: React.FC = () => {
                 <label className="text-xs text-gray-500 font-medium text-center block">拟定投期数</label>
                 <input
                   type="number"
+                  min="1"
                   value={periods || ''}
                   placeholder="12"
-                  onChange={(e) => setPeriods(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setPeriods(Math.max(1, parseFloat(e.target.value) || 0))}
                   className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
                 />
               </div>
@@ -475,10 +558,11 @@ const Calculator: React.FC = () => {
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
+                    min="0"
                     value={results.qtyGap || ''}
                     placeholder="0"
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
+                      const val = Math.max(0, parseFloat(e.target.value) || 0);
                       setTargetTotalQty(results.finalQty + val);
                     }}
                     className="w-24 px-2 py-1 bg-transparent border-b border-dashed border-gray-200 focus:border-emerald-500 outline-none text-right text-lg font-bold text-gray-800 transition-colors"
@@ -489,14 +573,15 @@ const Calculator: React.FC = () => {
               <div className="flex justify-between items-center border-t border-gray-50 pt-2">
                 <span className="text-sm text-gray-500">预估总投入</span>
                 <div className="flex items-center gap-1">
-                  <span className="text-gray-400 text-sm">¥</span>
+                  <span className="text-gray-400 text-sm">{results.currency}</span>
                   <input
                     type="number"
+                    min="0"
                     step="0.01"
                     value={results.totalFundsNeeded ? results.totalFundsNeeded.toFixed(2) : ''}
                     placeholder="0.00"
                     onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
+                      const val = Math.max(0, parseFloat(e.target.value) || 0);
                       if (marketPrice > 0) {
                         // Reverse calculation (approximate)
                         const gap = val / marketPrice;
@@ -520,7 +605,7 @@ const Calculator: React.FC = () => {
                 <div className="text-right flex-1">
                   <span className="text-xs font-medium text-emerald-800 block">每期预估投入</span>
                   <span className="text-lg font-bold text-emerald-600">
-                    ¥{results.periodicInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {results.currency}{results.periodicInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                   <p className="text-[10px] text-emerald-500 font-normal">基于拟买入单价</p>
                 </div>
@@ -529,6 +614,45 @@ const Calculator: React.FC = () => {
             
             <p className="text-[10px] text-gray-400 text-center leading-tight">
               计算逻辑：根据目标持仓与当前持仓（含定投计划）的差额，结合“拟买入单价”计算所需总资金及每期平均投入。
+            </p>
+          </div>
+
+          {/* Profit Prediction Card */}
+          <div className="bg-blue-50/50 p-6 rounded-2xl space-y-5 border border-blue-100">
+            <div className="flex items-center justify-center gap-2 text-blue-800">
+              <TrendingDown size={18} className="text-blue-500 rotate-180" />
+              <h3 className="font-bold">💰 盈亏预测 (卖出模拟)</h3>
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="text-xs text-gray-500 font-medium text-center block">预期卖出单价</label>
+              <input
+                type="number"
+                min="0"
+                value={targetSellPrice || ''}
+                placeholder="0.00"
+                onChange={(e) => setTargetSellPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="w-full px-4 py-3 bg-white border border-blue-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-center text-lg font-semibold"
+              />
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex justify-between items-center">
+              <div className="flex-1">
+                <span className="text-sm text-gray-500 block">预估净利润</span>
+                <span className={`text-xl font-bold ${results.potentialProfit >= 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                  {results.potentialProfit >= 0 ? '+' : ''}{results.currency}{results.potentialProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="text-right flex-1">
+                <span className="text-sm text-gray-500 block">预估收益率</span>
+                <span className={`text-xl font-bold ${results.profitPercent >= 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                  {results.profitPercent >= 0 ? '+' : ''}{results.profitPercent.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+            
+            <p className="text-[10px] text-gray-400 text-center leading-tight">
+              计算逻辑：基于“最终持仓”与“预期卖出单价”计算卖出总额（已扣除预估卖出费率），减去“累计投入”得出净利润。
             </p>
           </div>
 
