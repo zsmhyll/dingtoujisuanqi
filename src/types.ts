@@ -16,4 +16,7 @@ export interface CalculationResult {
   neededQty: number;
   neededMoney: number;
   isUnreachable: boolean;
+  qtyGap: number;
+  totalFundsNeeded: number;
+  periodicInvestment: number;
 }

@@ -14,6 +14,8 @@ const Calculator: React.FC = () => {
   ]);
   const [useFee, setUseFee] = useState<boolean>(true);
   const [targetCost, setTargetCost] = useState<number>(0);
+  const [targetTotalQty, setTargetTotalQty] = useState<number>(0);
+  const [periods, setPeriods] = useState<number>(12);
   const [keepPosition, setKeepPosition] = useState<boolean>(false);
 
   const handleReset = () => {
@@ -27,6 +29,8 @@ const Calculator: React.FC = () => {
       { id: '2', price: 0, qty: 0 },
     ]);
     setTargetCost(0);
+    setTargetTotalQty(0);
+    setPeriods(12);
     setMarket('us');
     setUseFee(true);
   };
@@ -139,6 +143,18 @@ const Calculator: React.FC = () => {
       }
     }
 
+    // Target Total Qty Planning
+    const qtyGap = Math.max(0, targetTotalQty - totalQty);
+    let totalFundsNeeded = qtyGap * marketPrice;
+    if (useFee && qtyGap > 0 && marketPrice > 0) {
+      if (market === 'a') {
+        totalFundsNeeded += Math.max(totalFundsNeeded * 0.00025, 5);
+      } else if (market === 'hk') {
+        totalFundsNeeded += totalFundsNeeded * (0.0003 + 0.00027 + 0.00005);
+      }
+    }
+    const periodicInvestment = periods > 0 ? totalFundsNeeded / periods : 0;
+
     return {
       beforeCost: currentPrice,
       costReduce,
@@ -148,9 +164,12 @@ const Calculator: React.FC = () => {
       diffPercent,
       neededQty: Math.max(0, Math.round(neededQty)),
       neededMoney: Math.max(0, neededMoney),
-      isUnreachable
+      isUnreachable,
+      qtyGap,
+      totalFundsNeeded,
+      periodicInvestment
     };
-  }, [currentQty, currentPrice, marketPrice, plans, market, useFee, targetCost]);
+  }, [currentQty, currentPrice, marketPrice, plans, market, useFee, targetCost, targetTotalQty, periods]);
 
   const marketInfo = {
     a: {
@@ -415,6 +434,90 @@ const Calculator: React.FC = () => {
             
           <p className="text-[10px] text-gray-400 text-center leading-tight">
               计算逻辑：基于您当前的持仓（含定投计划）作为基准，计算在拟买入单价下达到目标成本所需的额外股数。
+            </p>
+          </div>
+
+          {/* Target Quantity Planning Card */}
+          <div className="bg-emerald-50/50 p-6 rounded-2xl space-y-5 border border-emerald-100">
+            <div className="flex items-center justify-center gap-2 text-emerald-800">
+              <TrendingDown size={18} className="text-emerald-500 rotate-180" />
+              <h3 className="font-bold">📈 持仓规划 (目标持仓)</h3>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-500 font-medium text-center block">最终目标持仓</label>
+                <input
+                  type="number"
+                  value={targetTotalQty || ''}
+                  placeholder="0"
+                  onChange={(e) => setTargetTotalQty(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-gray-500 font-medium text-center block">拟定投期数</label>
+                <input
+                  type="number"
+                  value={periods || ''}
+                  placeholder="12"
+                  onChange={(e) => setPeriods(parseFloat(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-center text-lg font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">尚需买入数量</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={results.qtyGap || ''}
+                    placeholder="0"
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      setTargetTotalQty(results.finalQty + val);
+                    }}
+                    className="w-24 px-2 py-1 bg-transparent border-b border-dashed border-gray-200 focus:border-emerald-500 outline-none text-right text-lg font-bold text-gray-800 transition-colors"
+                  />
+                  <span className="text-xs font-normal text-gray-400">股</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center border-t border-gray-50 pt-2">
+                <span className="text-sm text-gray-500">预估总投入</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-400 text-sm">¥</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={results.totalFundsNeeded ? results.totalFundsNeeded.toFixed(2) : ''}
+                    placeholder="0.00"
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      if (marketPrice > 0) {
+                        // Reverse calculation (approximate)
+                        const gap = val / marketPrice;
+                        setTargetTotalQty(Math.round(results.finalQty + gap));
+                      }
+                    }}
+                    className="w-32 px-2 py-1 bg-transparent border-b border-dashed border-gray-200 focus:border-emerald-500 outline-none text-right text-lg font-bold text-gray-800 transition-colors"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-between items-center bg-emerald-50 -mx-4 -mb-4 p-4 rounded-b-xl">
+                <span className="text-sm font-medium text-emerald-800">每期预估投入</span>
+                <div className="text-right">
+                  <span className="text-xl font-bold text-emerald-600">
+                    ¥{results.periodicInvestment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <p className="text-[10px] text-emerald-500 font-normal">基于拟买入单价计算</p>
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-[10px] text-gray-400 text-center leading-tight">
+              计算逻辑：根据目标持仓与当前持仓（含定投计划）的差额，结合“拟买入单价”计算所需总资金及每期平均投入。
             </p>
           </div>
 
